@@ -1,0 +1,9 @@
+CompileFlags:
+  Remove:
+    - -mlongcalls
+    - -fstrict-volatile-bitfields
+    - -fno-tree-switch-conversion
+Diagnostics:
+  Suppress:
+    - pp_file_not_found
+    - ovl_no_viable_member_function_in_call
