@@ -108,11 +108,20 @@ Current dependencies:
 - `claws/BH1750`
 - `adafruit/Adafruit BME680 Library` (pulls Adafruit Unified Sensor + BusIO)
 
+## MQTT broker
+
+A Dockerised [Mosquitto](https://mosquitto.org/) broker lives in
+[`broker/`](broker/). It runs the server side that the firmware will publish
+sensor readings to. Bring it up with `cd broker && docker compose up -d`; see
+[`broker/README.md`](broker/README.md) for connection details and tests. The
+firmware MQTT client is not wired up yet — the broker is the first piece.
+
 ## Project layout
 
 ```
 monitor-air/
 ├── platformio.ini        # board, flash config, deps
+├── broker/               # Dockerised Mosquitto MQTT broker (server side)
 ├── src/
 │   ├── main.cpp          # firmware entry point
 │   ├── secrets.h         # WiFi credentials (gitignored)

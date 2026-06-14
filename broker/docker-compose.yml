@@ -1,0 +1,13 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: monitor-air-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # plain MQTT — the ESP32 connects here
+    volumes:
+      - ./config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data   # named volume: docker handles UID 1883 ownership
+
+volumes:
+  mosquitto-data:
