@@ -5,8 +5,8 @@
 #include "sensors.h"
 #include "mqtt_client.h"
 
-// Publish cadence — change this one line to retune. 3 minutes by design.
-static const uint32_t PUBLISH_INTERVAL_MS = 180000;
+// Publish cadence — change this one line to retune.
+static const uint32_t PUBLISH_INTERVAL_MS = 60000;  // 1 minute
 static const uint32_t WIFI_RETRY_MS       = 10000;
 
 static uint32_t lastPublish = 0;       // 0 = never published yet (publish ASAP once connected)
