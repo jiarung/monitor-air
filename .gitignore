@@ -5,3 +5,6 @@ compile_commands.json
 
 # Secrets — real credentials live in src/secrets.h (use secrets.h.example as template)
 src/secrets.h
+
+# Broker stack secrets (use broker/.env.example as template)
+broker/.env

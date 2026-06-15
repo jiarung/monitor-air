@@ -108,20 +108,35 @@ Current dependencies:
 - `claws/BH1750`
 - `adafruit/Adafruit BME680 Library` (pulls Adafruit Unified Sensor + BusIO)
 
-## MQTT broker
+## Server-side data pipeline
 
-A Dockerised [Mosquitto](https://mosquitto.org/) broker lives in
-[`broker/`](broker/). It runs the server side that the firmware will publish
-sensor readings to. Bring it up with `cd broker && docker compose up -d`; see
-[`broker/README.md`](broker/README.md) for connection details and tests. The
-firmware MQTT client is not wired up yet — the broker is the first piece.
+The whole server side is a Docker Compose stack in [`broker/`](broker/):
+
+```
+ESP32 ──MQTT──▶ Mosquitto ──▶ Telegraf ──▶ InfluxDB (SSD) ──▶ Grafana (charts)
+                                                  └──▶ backups to HDD (/data)
+```
+
+- **Mosquitto** — MQTT broker, devices publish to `<host>:1883`
+- **Telegraf** — subscribes to MQTT, writes to InfluxDB (no code, just config)
+- **InfluxDB** — time-series storage on the SSD (bucket `sensors`, kept forever)
+- **Grafana** — dashboard at `http://<host>:3001` with a time-range picker
+- backups run to the HDD at `/data/influx-backups`
+
+Bring it up with `cd broker && cp .env.example .env && docker compose up -d`.
+For testing without hardware, `docker compose --profile sim up -d sim` feeds
+synthetic data. See [`broker/README.md`](broker/README.md) for setup, the
+MQTT topic/JSON contract, backups, and lockdown steps.
+
+The firmware MQTT client is not wired up yet — it must publish JSON to
+`monitor-air/<device>/telemetry` per the contract in the broker README.
 
 ## Project layout
 
 ```
 monitor-air/
 ├── platformio.ini        # board, flash config, deps
-├── broker/               # Dockerised Mosquitto MQTT broker (server side)
+├── broker/               # server stack: Mosquitto + Telegraf + InfluxDB + Grafana
 ├── src/
 │   ├── main.cpp          # firmware entry point
 │   ├── secrets.h         # WiFi credentials (gitignored)

@@ -9,5 +9,71 @@ services:
       - ./config:/mosquitto/config:ro
       - mosquitto-data:/mosquitto/data   # named volume: docker handles UID 1883 ownership
 
+  influxdb:
+    image: influxdb:2.7
+    container_name: monitor-air-influxdb
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8086:8086"   # admin UI / API — localhost only (use SSH tunnel)
+    volumes:
+      - influxdb-data:/var/lib/influxdb2     # SSD (docker root)
+      - influxdb-config:/etc/influxdb2
+      - /data/influx-backups:/backups        # HDD — periodic backups land here
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  telegraf:
+    image: telegraf:1.30
+    container_name: monitor-air-telegraf
+    restart: unless-stopped
+    environment:
+      # single source of truth: map the influx admin token to the name telegraf.conf uses
+      INFLUX_TOKEN: ${DOCKER_INFLUXDB_INIT_ADMIN_TOKEN}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: monitor-air-grafana
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      INFLUX_TOKEN: ${DOCKER_INFLUXDB_INIT_ADMIN_TOKEN}   # consumed by provisioned datasource
+    ports:
+      - "3001:3000"   # frontend — open to the LAN (host 3000 is taken by another app)
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+
+  # Synthetic publisher — off by default. Start with:
+  #   docker compose --profile sim up -d sim
+  sim:
+    image: eclipse-mosquitto:2
+    container_name: monitor-air-sim
+    restart: unless-stopped
+    profiles: ["sim"]
+    entrypoint: ["/bin/sh", "/sim/publish.sh"]
+    volumes:
+      - ./sim:/sim:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+
 volumes:
   mosquitto-data:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:

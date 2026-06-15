@@ -1,79 +1,137 @@
-# monitor-air MQTT broker
+# monitor-air server stack
 
-A self-contained [Mosquitto](https://mosquitto.org/) MQTT broker for the
-`monitor-air` project, run via Docker Compose. The ESP32 firmware will publish
-its sensor readings here once the client side is added.
+The server side of `monitor-air`, run via Docker Compose:
 
-> **Scope:** broker only. The firmware in `../src` is unchanged.
+```
+ESP32 ──MQTT──▶ Mosquitto ──▶ Telegraf ──▶ InfluxDB (SSD) ──▶ Grafana
+                                                  └──▶ backups to HDD (/data)
+```
 
-## Run
+| Service    | Role                                   | Address                         |
+|------------|----------------------------------------|---------------------------------|
+| mosquitto  | MQTT broker (devices publish here)     | `<host>:1883`                   |
+| influxdb   | time-series storage (bucket `sensors`) | `127.0.0.1:8086` (localhost)    |
+| telegraf   | MQTT → InfluxDB bridge (no code)       | internal                        |
+| grafana    | charts / dashboards                    | `http://<host>:3001`            |
+| sim        | synthetic publisher (optional)         | internal, `--profile sim`       |
+
+> **Note:** Grafana is mapped to host port **3001** (host `3000` was already
+> taken on this machine). Change the `grafana` port mapping in
+> `docker-compose.yml` if you want a different one.
+
+## First-time setup
 
 ```bash
+# 1. backup target on the HDD (owned by uid 1000 so the influx container can write)
+mkdir -p /data/influx-backups          # use sudo + chown 1000:1000 if not already yours
+
+# 2. secrets
 cd broker
+cp .env.example .env
+#    edit .env — set passwords and a strong token:
+#      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=$(openssl rand -hex 32)
+
+# 3. bring up the stack
 docker compose up -d
+docker compose ps                       # influxdb should be "healthy"
 ```
 
-| Action            | Command                                  |
-|-------------------|------------------------------------------|
-| Status            | `docker compose ps`                      |
-| Logs (follow)     | `docker compose logs -f mosquitto`       |
-| Stop (keep data)  | `docker compose down`                    |
-| Stop + wipe data  | `docker compose down -v`                 |
-| Restart           | `docker compose restart`                 |
+InfluxDB's `DOCKER_INFLUXDB_INIT_*` vars are **only applied on the very first
+start** (empty `influxdb-data` volume). To change org/bucket/token afterwards
+you must `docker compose down -v` (this wipes the DB).
 
-Retained messages survive `down`/restart — they live in the `mosquitto-data`
-named volume. Use `down -v` to clear them.
+## Run / operate
 
-## Connecting
+| Action               | Command                                       |
+|----------------------|-----------------------------------------------|
+| Status               | `docker compose ps`                           |
+| Logs                 | `docker compose logs -f telegraf` (etc.)      |
+| Stop (keep data)     | `docker compose down`                         |
+| Stop + wipe all data | `docker compose down -v`                      |
 
-| Field    | Value                          |
-|----------|--------------------------------|
-| Host     | the broker machine's LAN IP    |
-| Port     | `1883`                         |
-| Protocol | plain MQTT (no TLS)            |
-| Auth     | none — **anonymous open**      |
-
-The host firewall must allow inbound **1883** for devices to reach the broker.
-The ESP32-S3 only supports **2.4 GHz** WiFi, so it must be on a 2.4 GHz network
-that can route to this host.
-
-## Test
+## Synthetic data (for testing without the ESP32)
 
 ```bash
-# subscribe in the background (inside the container)
-docker exec -d monitor-air-mqtt sh -c "mosquitto_sub -t 'monitor-air/#' -v > /tmp/sub.log 2>&1"
-
-# publish a message
-docker exec monitor-air-mqtt mosquitto_pub -t 'monitor-air/test' -m 'hello'
-
-# check it arrived
-docker exec monitor-air-mqtt cat /tmp/sub.log    # -> monitor-air/test hello
+docker compose --profile sim up -d sim      # start fake publisher
+docker compose logs -f sim                  # watch it publish
+docker compose stop sim                      # stop it
 ```
 
-From another machine on the LAN (needs `mosquitto-clients` installed):
+The sim publishes to `monitor-air/sim/telemetry`. Its points carry the tag
+`device=sim`, so you can delete them later:
 
 ```bash
-mosquitto_pub -h <broker-ip> -t test -m hi
+docker compose exec -T influxdb influx delete --bucket sensors \
+  --org monitor-air --token "$DOCKER_INFLUXDB_INIT_ADMIN_TOKEN" \
+  --start 1970-01-01T00:00:00Z --stop 2100-01-01T00:00:00Z \
+  --predicate 'device="sim"'
 ```
 
-## Security — locking down later
+## Data contract (the firmware must follow this)
 
-Anonymous access is fine for an isolated LAN, but for anything exposed you
-should add authentication. In `config/mosquitto.conf`:
+- **Topic:** `monitor-air/<device>/telemetry` (e.g. `monitor-air/livingroom/telemetry`)
+- **Payload (JSON, all values floats):**
+  ```json
+  {"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
+  ```
+  Keep every field a float (`lux:350.0`, not `350`) — InfluxDB fixes a field's
+  type on first write, and int/float drift causes partial write failures.
+
+Telegraf maps this to measurement `air`, tag `device` (2nd topic segment), and
+one float field per key.
+
+## Viewing charts
+
+Open `http://<host>:3001`, log in (`admin` / your `GF_SECURITY_ADMIN_PASSWORD`),
+open the **monitor-air** dashboard. Five panels (temp / humidity / pressure /
+gas / light) with a time-range picker (top right). The InfluxDB datasource is
+auto-provisioned (uid `influxdb-monitor-air`).
+
+## Backups (to the HDD)
+
+Live data sits on the SSD (named volume `influxdb-data`); backups go to the HDD
+at `/data/influx-backups`.
+
+```bash
+bash broker/backup/influx-backup.sh        # one-off backup + rotation (keeps newest 14)
+```
+
+Schedule a daily backup via cron (`crontab -e`):
+
+```cron
+30 3 * * * /home/jiarung/monitor-air/broker/backup/influx-backup.sh >> /home/jiarung/monitor-air/broker/backup/backup.log 2>&1
+```
+
+The script resolves its own path, loads `broker/.env`, and is safe under cron's
+minimal environment. Tune retention with `KEEP=30 bash .../influx-backup.sh`.
+
+## Storage rationale
+
+InfluxDB does many small random writes (WAL + compactions) → it belongs on the
+**SSD**. A year of this single sensor compresses to well under a few hundred MB,
+so the HDD's capacity isn't needed for the live DB. The **HDD** is used for
+periodic backups (bulk sequential writes, off the primary disk).
+
+## Security note
+
+Mosquitto is anonymous-open and Grafana/InfluxDB use the passwords in `.env` —
+fine for an isolated LAN. Before exposing anything beyond the LAN, add MQTT
+auth (see below), put Grafana behind TLS, and rotate the InfluxDB token.
+
+### Locking down MQTT later
+
+The broker mounts `config` read-only, so generate the password file on the host:
+
+```bash
+docker run --rm -it -v "$PWD/config:/c" eclipse-mosquitto:2 \
+  mosquitto_passwd -c /c/passwd <username>
+```
+
+Then set in `config/mosquitto.conf`:
 
 ```conf
 allow_anonymous false
 password_file /mosquitto/config/passwd
 ```
 
-Create the password file (the running broker mounts `config` read-only, so
-generate it on the host with a throwaway container, then restart):
-
-```bash
-docker run --rm -it -v "$PWD/config:/c" eclipse-mosquitto:2 \
-  mosquitto_passwd -c /c/passwd <username>
-docker compose restart
-```
-
-For encrypted transport, add a TLS listener on `8883` with `cafile` /
-`certfile` / `keyfile`.
+and `docker compose restart mosquitto`.
