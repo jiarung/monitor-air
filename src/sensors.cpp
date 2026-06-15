@@ -13,8 +13,12 @@ static inline bool finiteF(float v) {
 
 namespace {
 
-constexpr uint8_t I2C_SDA = 8;
-constexpr uint8_t I2C_SCL = 9;
+// BME680 on the primary I2C bus (Wire); BH1750 on a separate bus (Wire1) since
+// it's wired to its own pins.
+constexpr uint8_t BME_SDA   = 8;
+constexpr uint8_t BME_SCL   = 9;
+constexpr uint8_t LIGHT_SDA = 17;
+constexpr uint8_t LIGHT_SCL = 18;
 
 Adafruit_BME680 bme;
 BH1750 lightMeter;
@@ -39,10 +43,10 @@ bool beginBme() {
     return false;
 }
 
-// BH1750 ADDR low -> 0x23, ADDR high -> 0x5C.
+// BH1750 ADDR unconnected -> 0x23 (ADDR high would be 0x5C). On Wire1.
 bool beginBh1750() {
     for (uint8_t addr : {0x23, 0x5C}) {
-        if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire)) {
+        if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire1)) {
             Serial.printf("[sensors] BH1750 ok @ 0x%02X\n", addr);
             return true;
         }
@@ -54,7 +58,8 @@ bool beginBh1750() {
 }  // namespace
 
 bool sensorsBegin() {
-    Wire.begin(I2C_SDA, I2C_SCL);
+    Wire.begin(BME_SDA, BME_SCL);
+    Wire1.begin(LIGHT_SDA, LIGHT_SCL);
     bmeOk = beginBme();
     bh1750Ok = beginBh1750();
     return bmeOk || bh1750Ok;
