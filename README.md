@@ -32,9 +32,10 @@ Sensor SCL  -> GPIO9
 ## Getting started
 
 ```bash
-# 1. Provide your WiFi credentials (secrets.h is gitignored)
+# 1. Provide your config (secrets.h is gitignored)
 cp src/secrets.h.example src/secrets.h
-#    then edit src/secrets.h and set WIFI_SSID / WIFI_PASSWORD
+#    then edit src/secrets.h: WIFI_SSID / WIFI_PASSWORD, MQTT_HOST (broker LAN
+#    IP), and MQTT_DEVICE_ID (this unit's name)
 
 # 2. Build
 pio run
@@ -49,11 +50,13 @@ pio device monitor --port /dev/cu.usbmodem2101 --baud 115200
 Expected log after a reset:
 
 ```
-.
-192.168.x.x
-Boot OK
-Temp=24.8C Hum=51.2% Pressure=1009.3hPa Gas=12.4kΩ
-...
+[boot] monitor-air starting
+[sensors] BME680 ok @ 0x77
+[sensors] BH1750 ok @ 0x23
+[mqtt] topic=monitor-air/livingroom/telemetry
+[wifi] connecting to <ssid> ...
+[mqtt] connected as monitor-air-livingroom -> 192.168.x.x:1883
+[mqtt] published monitor-air/livingroom/telemetry {"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
 ```
 
 > The WiFi IP and `Boot OK` are printed once in `setup()`. This board uses
@@ -63,14 +66,23 @@ Temp=24.8C Hum=51.2% Pressure=1009.3hPa Gas=12.4kΩ
 
 ## Secrets
 
-WiFi credentials live in `src/secrets.h`, which is **gitignored** and never
-committed. Use `src/secrets.h.example` as the template:
+WiFi credentials and MQTT settings live in `src/secrets.h`, which is
+**gitignored** and never committed. Use `src/secrets.h.example` as the template:
 
 ```cpp
 #pragma once
-static const char* WIFI_SSID     = "your-wifi-ssid";
-static const char* WIFI_PASSWORD = "your-wifi-password";
+static const char*    WIFI_SSID      = "your-wifi-ssid";
+static const char*    WIFI_PASSWORD  = "your-wifi-password";
+static const char*    MQTT_HOST      = "192.168.x.x"; // broker machine's LAN IP
+static const uint16_t MQTT_PORT      = 1883;
+static const char*    MQTT_DEVICE_ID = "livingroom";  // topic segment + InfluxDB device tag
+static const char*    MQTT_USER      = "";             // empty = anonymous broker
+static const char*    MQTT_PASS      = "";
 ```
+
+`MQTT_DEVICE_ID` must be `[A-Za-z0-9_-]` (no spaces / `+` / `#`) — it becomes a
+topic segment and is validated at boot. Flash the same firmware to several
+devices and just change this one value per unit.
 
 ESP32-S3 only supports **2.4 GHz** WiFi — a 5 GHz SSID will never connect.
 
@@ -128,8 +140,17 @@ For testing without hardware, `docker compose --profile sim up -d sim` feeds
 synthetic data. See [`broker/README.md`](broker/README.md) for setup, the
 MQTT topic/JSON contract, backups, and lockdown steps.
 
-The firmware MQTT client is not wired up yet — it must publish JSON to
-`monitor-air/<device>/telemetry` per the contract in the broker README.
+The firmware publishes to this pipeline. Every 3 minutes it sends flat float
+JSON to `monitor-air/<device>/telemetry` (QoS 0, not retained — Telegraf
+timestamps each message on ingest), e.g.:
+
+```json
+{"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
+```
+
+`<device>` is set by `MQTT_DEVICE_ID` in `src/secrets.h`. A sensor that fails
+to read simply omits its field (so an unwired BH1750 just drops `lux`). See
+[`broker/README.md`](broker/README.md) for the full contract.
 
 ## Project layout
 
@@ -138,9 +159,11 @@ monitor-air/
 ├── platformio.ini        # board, flash config, deps
 ├── broker/               # server stack: Mosquitto + Telegraf + InfluxDB + Grafana
 ├── src/
-│   ├── main.cpp          # firmware entry point
-│   ├── secrets.h         # WiFi credentials (gitignored)
-│   └── secrets.h.example # credentials template
+│   ├── main.cpp          # non-blocking orchestration + publish schedule
+│   ├── sensors.h/.cpp    # BME680 + BH1750 -> SensorReading snapshot
+│   ├── mqtt_client.h/.cpp# PubSubClient wrapper: connect + publish telemetry
+│   ├── secrets.h         # WiFi + MQTT config (gitignored)
+│   └── secrets.h.example # config template
 ├── include/              # project headers
 ├── lib/                  # private libraries
 └── test/                 # unit tests
