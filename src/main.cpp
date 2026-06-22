@@ -4,6 +4,7 @@
 #include "secrets.h"
 #include "sensors.h"
 #include "mqtt_client.h"
+#include "log.h"
 
 // Publish cadence — change this one line to retune.
 static const uint32_t PUBLISH_INTERVAL_MS = 60000;  // 1 minute
@@ -18,7 +19,7 @@ static void wifiEnsure() {
     uint32_t now = millis();
     if (lastWifiAttempt != 0 && now - lastWifiAttempt < WIFI_RETRY_MS) return;
     lastWifiAttempt = now;
-    Serial.printf("[wifi] connecting to %s ...\n", WIFI_SSID);
+    logf("[wifi] connecting to %s ...\n", WIFI_SSID);
     WiFi.disconnect();
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
@@ -26,13 +27,15 @@ static void wifiEnsure() {
 void setup() {
     Serial.begin(115200);
     delay(300);
-    Serial.println("\n[boot] monitor-air starting");
+    Serial.println();  // separate from boot-ROM chatter
+    logln("[boot] monitor-air starting");
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+    logTimeBegin();  // arm SNTP; syncs in the background once WiFi is up
 
     if (!sensorsBegin()) {
-        Serial.println("[sensors] none available — continuing (will publish nothing useful)");
+        logln("[sensors] none available — continuing (will publish nothing useful)");
     }
     mqttSetup();
     wifiEnsure();  // start the first (non-blocking) connection attempt
