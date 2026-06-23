@@ -2,6 +2,7 @@
 .cache
 compile_commands.json
 .vscode/
+.env
 
 # Secrets — real credentials live in src/secrets.h (use secrets.h.example as template)
 src/secrets.h
