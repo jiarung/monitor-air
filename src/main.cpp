@@ -26,7 +26,12 @@ static void wifiEnsure() {
 
 void setup() {
     Serial.begin(115200);
-    delay(300);
+    // USB-CDC on boot: a reset drops the USB device and the host re-enumerates
+    // (~0.5-2s) before the monitor reattaches. Wait for it, otherwise the boot
+    // logs below print into that dead window and are lost. Cap the wait so a
+    // headless boot (no monitor attached) still proceeds.
+    while (!Serial && millis() < 3000) delay(10);
+    delay(100);
     Serial.println();  // separate from boot-ROM chatter
     logln("[boot] monitor-air starting");
 
