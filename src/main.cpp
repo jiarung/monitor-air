@@ -7,7 +7,7 @@
 #include "log.h"
 
 // Publish cadence — change this one line to retune.
-static const uint32_t PUBLISH_INTERVAL_MS = 60000;  // 1 minute
+static const uint32_t PUBLISH_INTERVAL_MS = 15000;  // 15 seconds
 static const uint32_t WIFI_RETRY_MS       = 10000;
 
 static uint32_t lastPublish = 0;       // 0 = never published yet (publish ASAP once connected)
