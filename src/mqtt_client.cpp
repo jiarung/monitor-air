@@ -7,6 +7,7 @@
 #include <PubSubClient.h>
 
 #include "secrets.h"
+#include "log.h"
 
 namespace {
 
@@ -50,9 +51,9 @@ bool tryConnect() {
         ok = client.connect(clientId);
     }
     if (ok) {
-        Serial.printf("[mqtt] connected as %s -> %s:%u\n", clientId, MQTT_HOST, MQTT_PORT);
+        logf("[mqtt] connected as %s -> %s:%u\n", clientId, MQTT_HOST, MQTT_PORT);
     } else {
-        Serial.printf("[mqtt] connect failed, state=%d (retry in %us)\n",
+        logf("[mqtt] connect failed, state=%d (retry in %us)\n",
                       client.state(), (unsigned)(RECONNECT_EVERY_MS / 1000));
     }
     return ok;
@@ -62,14 +63,14 @@ bool tryConnect() {
 
 void mqttSetup() {
     if (!isValidDeviceId(MQTT_DEVICE_ID)) {
-        Serial.printf("[mqtt] FATAL: invalid MQTT_DEVICE_ID \"%s\" — must be 1-%u of [A-Za-z0-9_-]. "
+        logf("[mqtt] FATAL: invalid MQTT_DEVICE_ID \"%s\" — must be 1-%u of [A-Za-z0-9_-]. "
                       "MQTT disabled.\n", MQTT_DEVICE_ID ? MQTT_DEVICE_ID : "(null)", (unsigned)MAX_ID_LEN);
         configValid = false;
         return;
     }
     if ((MQTT_USER != nullptr && strlen(MQTT_USER) > MAX_CRED_LEN) ||
         (MQTT_PASS != nullptr && strlen(MQTT_PASS) > MAX_CRED_LEN)) {
-        Serial.printf("[mqtt] FATAL: MQTT_USER/MQTT_PASS exceed %u chars (CONNECT packet would "
+        logf("[mqtt] FATAL: MQTT_USER/MQTT_PASS exceed %u chars (CONNECT packet would "
                       "overflow the %u-byte buffer). MQTT disabled.\n",
                       (unsigned)MAX_CRED_LEN, (unsigned)MQTT_BUFFER_SIZE);
         configValid = false;
@@ -83,7 +84,7 @@ void mqttSetup() {
     client.setBufferSize(MQTT_BUFFER_SIZE);
     client.setKeepAlive(MQTT_KEEPALIVE_S);
     client.setSocketTimeout(MQTT_SOCKET_TMO_S);
-    Serial.printf("[mqtt] topic=%s\n", topic);
+    logf("[mqtt] topic=%s\n", topic);
 }
 
 void mqttLoop() {
@@ -139,22 +140,22 @@ bool mqttPublish(const SensorReading& r) {
                  addField("gas", r.gas, r.gasValid) &&
                  addField("lux", r.lux, r.luxValid);
     if (!built || n + 2 > cap) {  // +2: closing '}' and NUL
-        Serial.println("[mqtt] publish aborted: payload overflow");
+        logln("[mqtt] publish aborted: payload overflow");
         return false;
     }
     payload[n++] = '}';
     payload[n] = '\0';
 
     if (first) {  // no valid fields — nothing worth sending
-        Serial.println("[mqtt] skip publish: no valid sensor fields");
+        logln("[mqtt] skip publish: no valid sensor fields");
         return false;
     }
 
     bool ok = client.publish(topic, payload, false);  // QoS 0, not retained
     if (ok) {
-        Serial.printf("[mqtt] published %s %s\n", topic, payload);
+        logf("[mqtt] published %s %s\n", topic, payload);
     } else {
-        Serial.printf("[mqtt] publish FAILED: state=%d connected=%d wifi=%d topicLen=%u payloadLen=%u\n",
+        logf("[mqtt] publish FAILED: state=%d connected=%d wifi=%d topicLen=%u payloadLen=%u\n",
                       client.state(), client.connected(), WiFi.status(),
                       (unsigned)strlen(topic), (unsigned)strlen(payload));
     }

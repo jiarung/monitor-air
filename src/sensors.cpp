@@ -1,5 +1,7 @@
 #include "sensors.h"
 
+#include "log.h"
+
 // Portable finite check: NaN fails (v == v), and the bounds reject +/-Inf.
 // Avoids the newlib isfinite() macro vs std::isfinite ambiguity on xtensa.
 static inline bool finiteF(float v) {
@@ -13,12 +15,10 @@ static inline bool finiteF(float v) {
 
 namespace {
 
-// BME680 on the primary I2C bus (Wire); BH1750 on a separate bus (Wire1) since
-// it's wired to its own pins.
-constexpr uint8_t BME_SDA   = 8;
-constexpr uint8_t BME_SCL   = 9;
-constexpr uint8_t LIGHT_SDA = 17;
-constexpr uint8_t LIGHT_SCL = 18;
+// Both sensors share one I2C bus (Wire). Their addresses don't collide
+// (BME680 0x76/0x77, BH1750 0x23/0x5C), so a single SDA/SCL pair serves both.
+constexpr uint8_t I2C_SDA = 17;
+constexpr uint8_t I2C_SCL = 18;
 
 Adafruit_BME680 bme;
 BH1750 lightMeter;
@@ -35,31 +35,30 @@ bool beginBme() {
             bme.setPressureOversampling(BME680_OS_4X);
             bme.setIIRFilterSize(BME680_FILTER_SIZE_3);
             bme.setGasHeater(320, 150);  // 320 degC for 150 ms
-            Serial.printf("[sensors] BME680 ok @ 0x%02X\n", addr);
+            logf("[sensors] BME680 ok @ 0x%02X\n", addr);
             return true;
         }
     }
-    Serial.println("[sensors] BME680 NOT found (0x77/0x76)");
+    logln("[sensors] BME680 NOT found (0x77/0x76)");
     return false;
 }
 
-// BH1750 ADDR unconnected -> 0x23 (ADDR high would be 0x5C). On Wire1.
+// BH1750 ADDR unconnected -> 0x23 (ADDR high would be 0x5C). Shares Wire.
 bool beginBh1750() {
     for (uint8_t addr : {0x23, 0x5C}) {
-        if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire1)) {
-            Serial.printf("[sensors] BH1750 ok @ 0x%02X\n", addr);
+        if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire)) {
+            logf("[sensors] BH1750 ok @ 0x%02X\n", addr);
             return true;
         }
     }
-    Serial.println("[sensors] BH1750 NOT found (0x23/0x5C)");
+    logln("[sensors] BH1750 NOT found (0x23/0x5C)");
     return false;
 }
 
 }  // namespace
 
 bool sensorsBegin() {
-    Wire.begin(BME_SDA, BME_SCL);
-    Wire1.begin(LIGHT_SDA, LIGHT_SCL);
+    Wire.begin(I2C_SDA, I2C_SCL);
     bmeOk = beginBme();
     bh1750Ok = beginBh1750();
     return bmeOk || bh1750Ok;

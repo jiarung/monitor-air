@@ -4,9 +4,10 @@
 #include "secrets.h"
 #include "sensors.h"
 #include "mqtt_client.h"
+#include "log.h"
 
 // Publish cadence — change this one line to retune.
-static const uint32_t PUBLISH_INTERVAL_MS = 60000;  // 1 minute
+static const uint32_t PUBLISH_INTERVAL_MS = 15000;  // 15 seconds
 static const uint32_t WIFI_RETRY_MS       = 10000;
 
 static uint32_t lastPublish = 0;       // 0 = never published yet (publish ASAP once connected)
@@ -18,21 +19,28 @@ static void wifiEnsure() {
     uint32_t now = millis();
     if (lastWifiAttempt != 0 && now - lastWifiAttempt < WIFI_RETRY_MS) return;
     lastWifiAttempt = now;
-    Serial.printf("[wifi] connecting to %s ...\n", WIFI_SSID);
+    logf("[wifi] connecting to %s ...\n", WIFI_SSID);
     WiFi.disconnect();
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 void setup() {
     Serial.begin(115200);
-    delay(300);
-    Serial.println("\n[boot] monitor-air starting");
+    // USB-CDC on boot: a reset drops the USB device and the host re-enumerates
+    // (~0.5-2s) before the monitor reattaches. Wait for it, otherwise the boot
+    // logs below print into that dead window and are lost. Cap the wait so a
+    // headless boot (no monitor attached) still proceeds.
+    while (!Serial && millis() < 3000) delay(10);
+    delay(100);
+    Serial.println();  // separate from boot-ROM chatter
+    logln("[boot] monitor-air starting");
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+    logTimeBegin();  // arm SNTP; syncs in the background once WiFi is up
 
     if (!sensorsBegin()) {
-        Serial.println("[sensors] none available — continuing (will publish nothing useful)");
+        logln("[sensors] none available — continuing (will publish nothing useful)");
     }
     mqttSetup();
     wifiEnsure();  // start the first (non-blocking) connection attempt
