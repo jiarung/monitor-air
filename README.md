@@ -4,6 +4,14 @@ ESP32-S3 air/environment monitor firmware. Reads ambient light, temperature,
 humidity, pressure and gas resistance over I²C and connects to WiFi for
 reporting.
 
+## Features
+
+- Measures temperature, humidity, pressure, gas resistance (a VOC proxy) and ambient light.
+- ESP32-S3 over WiFi with a non-blocking event loop; publishes every 15 s.
+- End-to-end MQTT → InfluxDB → Grafana pipeline for long-term storage and visualization.
+- Fail-open telemetry: a sensor that fails to read just omits its field instead of blocking the message.
+- Multi-node ready: flash the same firmware and change only `MQTT_DEVICE_ID` per unit.
+
 ## Hardware
 
 | Item        | Detail                                                        |
@@ -160,6 +168,17 @@ enable MQTT auth, put Grafana behind a TLS reverse proxy, and rotate the
 InfluxDB token — see the lockdown steps in
 [`broker/README.md`](broker/README.md#security-note). Real credentials live only
 in `src/secrets.h` and `broker/.env`, both gitignored and never committed.
+
+## Known limitations
+
+- **BME680 temperature reads high:** the gas-sensor heater self-heats the die,
+  so readings run ~3–5 °C above ambient. Temperature-offset compensation isn't
+  done yet.
+- **Light is lux, not PPFD:** the BH1750 measures white-light illuminance; plant
+  photosynthetic light (PPFD / spectral quality) needs a separate sensor (e.g. AS7341).
+- **WiFi is 2.4 GHz only:** the ESP32-S3 will never connect to a 5 GHz SSID.
+- **Broker is open by default:** anonymous MQTT and plain-HTTP Grafana — intended
+  for a trusted LAN only (see [Security](#security)).
 
 ## Project layout
 
