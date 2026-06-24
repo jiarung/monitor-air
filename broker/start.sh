@@ -29,5 +29,5 @@ done
 echo
 docker compose ps
 echo
-echo "Grafana:  http://localhost:3001   (also http://100.118.198.67:3001 over Tailscale)"
+echo "Grafana:  http://localhost:3001   (also http://<tailscale-ip>:3001 over Tailscale)"
 echo "To feed test data:  docker compose --profile sim up -d sim"

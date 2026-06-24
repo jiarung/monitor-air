@@ -69,7 +69,7 @@ docker compose exec -T influxdb influx delete --bucket sensors \
 
 ## Data contract (the firmware must follow this)
 
-- **Topic:** `monitor-air/<device>/telemetry` (e.g. `monitor-air/livingroom/telemetry`)
+- **Topic:** `monitor-air/<device>/telemetry` (e.g. `monitor-air/sensor-01/telemetry`)
 - **Payload (JSON, all values floats):**
   ```json
   {"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
@@ -99,7 +99,7 @@ bash broker/backup/influx-backup.sh        # one-off backup + rotation (keeps ne
 Schedule a daily backup via cron (`crontab -e`):
 
 ```cron
-30 3 * * * /home/jiarung/monitor-air/broker/backup/influx-backup.sh >> /home/jiarung/monitor-air/broker/backup/backup.log 2>&1
+30 3 * * * "$HOME"/monitor-air/broker/backup/influx-backup.sh >> "$HOME"/monitor-air/broker/backup/backup.log 2>&1
 ```
 
 The script resolves its own path, loads `broker/.env`, and is safe under cron's

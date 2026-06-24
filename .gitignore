@@ -10,3 +10,6 @@ src/secrets.h
 
 # Broker stack secrets (use broker/.env.example as template)
 broker/.env
+
+# Personal progress journal — kept local, not for the public repo
+docs/PROGRESS.md

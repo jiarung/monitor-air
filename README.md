@@ -11,7 +11,7 @@ reporting.
 | Board       | ESP32-S3-WROOM-1 **N16R8** (16 MB quad flash + 8 MB OPI PSRAM) |
 | Light       | **BH1750** ambient light sensor (I²C `0x23`)                  |
 | Environment | **BME680** temp / humidity / pressure / gas (I²C `0x77` or `0x76`) |
-| Bus         | I²C — `SDA = GPIO8`, `SCL = GPIO9`                             |
+| Bus         | I²C — `SDA = GPIO17`, `SCL = GPIO18`                          |
 
 Both sensors share the same I²C bus (`Wire`); their addresses don't collide.
 
@@ -20,8 +20,8 @@ Both sensors share the same I²C bus (`Wire`); their addresses don't collide.
 ```
 Sensor VCC  -> 3V3
 Sensor GND  -> GND
-Sensor SDA  -> GPIO8
-Sensor SCL  -> GPIO9
+Sensor SDA  -> GPIO17
+Sensor SCL  -> GPIO18
 ```
 
 ## Toolchain
@@ -53,10 +53,10 @@ Expected log after a reset:
 [boot] monitor-air starting
 [sensors] BME680 ok @ 0x77
 [sensors] BH1750 ok @ 0x23
-[mqtt] topic=monitor-air/livingroom/telemetry
+[mqtt] topic=monitor-air/sensor-01/telemetry
 [wifi] connecting to <ssid> ...
-[mqtt] connected as monitor-air-livingroom -> 192.168.x.x:1883
-[mqtt] published monitor-air/livingroom/telemetry {"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
+[mqtt] connected as monitor-air-sensor-01 -> 192.168.x.x:1883
+[mqtt] published monitor-air/sensor-01/telemetry {"temp":24.8,"hum":51.2,"pressure":1009.3,"gas":12.4,"lux":350.0}
 ```
 
 > The WiFi IP and `Boot OK` are printed once in `setup()`. This board uses
@@ -75,7 +75,7 @@ static const char*    WIFI_SSID      = "your-wifi-ssid";
 static const char*    WIFI_PASSWORD  = "your-wifi-password";
 static const char*    MQTT_HOST      = "192.168.x.x"; // broker machine's LAN IP
 static const uint16_t MQTT_PORT      = 1883;
-static const char*    MQTT_DEVICE_ID = "livingroom";  // topic segment + InfluxDB device tag
+static const char*    MQTT_DEVICE_ID = "sensor-01";   // topic segment + InfluxDB device tag
 static const char*    MQTT_USER      = "";             // empty = anonymous broker
 static const char*    MQTT_PASS      = "";
 ```
@@ -140,7 +140,7 @@ For testing without hardware, `docker compose --profile sim up -d sim` feeds
 synthetic data. See [`broker/README.md`](broker/README.md) for setup, the
 MQTT topic/JSON contract, backups, and lockdown steps.
 
-The firmware publishes to this pipeline. Every 3 minutes it sends flat float
+The firmware publishes to this pipeline. Every 15 seconds it sends flat float
 JSON to `monitor-air/<device>/telemetry` (QoS 0, not retained — Telegraf
 timestamps each message on ingest), e.g.:
 
@@ -151,6 +151,15 @@ timestamps each message on ingest), e.g.:
 `<device>` is set by `MQTT_DEVICE_ID` in `src/secrets.h`. A sensor that fails
 to read simply omits its field (so an unwired BH1750 just drops `lux`). See
 [`broker/README.md`](broker/README.md) for the full contract.
+
+## Security
+
+This stack targets a **trusted LAN**: the MQTT broker is anonymous-open and
+Grafana is served over plain HTTP. Before exposing anything beyond your LAN,
+enable MQTT auth, put Grafana behind a TLS reverse proxy, and rotate the
+InfluxDB token — see the lockdown steps in
+[`broker/README.md`](broker/README.md#security-note). Real credentials live only
+in `src/secrets.h` and `broker/.env`, both gitignored and never committed.
 
 ## Project layout
 

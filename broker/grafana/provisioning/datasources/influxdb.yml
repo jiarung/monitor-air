@@ -11,6 +11,9 @@ datasources:
       version: Flux
       organization: monitor-air
       defaultBucket: sensors
+      # Safe here: Grafana ↔ InfluxDB talk over the Docker-internal network (no
+      # TLS in play). Remove this if you ever put real TLS in front of InfluxDB,
+      # otherwise certificate validation is silently skipped.
       tlsSkipVerify: true
     secureJsonData:
       token: $INFLUX_TOKEN
