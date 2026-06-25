@@ -4,7 +4,9 @@ The server side of `monitor-air`, run via Docker Compose:
 
 ```
 ESP32 ──MQTT──▶ Mosquitto ──▶ Telegraf ──▶ InfluxDB (SSD) ──▶ Grafana
-                                                  └──▶ backups to HDD (/data)
+                   │   ▲                          └──▶ backups to HDD (/data)
+                   ▼   │ cmd
+                 light ┘ ──▶ Tapo P110M plug
 ```
 
 | Service    | Role                                   | Address                         |
@@ -13,6 +15,7 @@ ESP32 ──MQTT──▶ Mosquitto ──▶ Telegraf ──▶ InfluxDB (SSD) 
 | influxdb   | time-series storage (bucket `sensors`) | `127.0.0.1:8086` (localhost)    |
 | telegraf   | MQTT → InfluxDB bridge (no code)       | internal                        |
 | grafana    | charts / dashboards                    | `http://<host>:3001`            |
+| light      | plant-light controller (lux → P110M)   | internal                        |
 | sim        | synthetic publisher (optional)         | internal, `--profile sim`       |
 
 > **Note:** Grafana is mapped to host port **3001** (host `3000` was already
@@ -79,6 +82,35 @@ docker compose exec -T influxdb influx delete --bucket sensors \
 
 Telegraf maps this to measurement `air`, tag `device` (2nd topic segment), and
 one float field per key.
+
+## Plant-light control
+
+The `light` service reads `lux` from telemetry and switches a **Tapo P110M**
+plug (the plant light). The ESP32 knows nothing about the plug — it only
+reports lux. Decisions run here on a 60 s tick.
+
+**Rule (v1):** only turn on within a local-time window when it's dark, with a
+lux hysteresis gap to stop flapping, and a hard off in the evening. A
+dead/stale sensor fails safe to OFF. All knobs (`LUX_ON_BELOW`, `ON_START`,
+`HARD_OFF`, `MIN_HOLD`, …) live at the top of `control/light.py`.
+
+**Topics** (`<loc>` = `LIGHT_LOCATION`):
+
+| Topic | Payload | Notes |
+|-------|---------|-------|
+| `monitor-air/<loc>/light/cmd` | `{"state":"ON"\|"OFF"}` | **external override seam** — publish here to drive the plug manually / from an AI agent (holds off auto for `MANUAL_HOLD`). Not retained. |
+| `monitor-air/<loc>/light/state` | `{"state":"ON","on":1,"source":"auto"}` | retained; `on` is charted in Grafana (measurement `light`). |
+| `monitor-air/<loc>/light/availability` | `online`/`offline` | retained + MQTT LWT. |
+
+**Config** (`.env`, see `.env.example`): `TAPO_EMAIL`, `TAPO_PASSWORD`,
+`TAPO_IP`, `LIGHT_LOCATION`, `LIGHT_SENSOR_DEVICE`, `LIGHT_TZ`, `MQTT_HOST`.
+
+```bash
+docker compose up -d --build light            # start it
+docker compose run --rm light python /light.py --selftest   # check decide() logic
+# manual override:
+mosquitto_pub -h localhost -t monitor-air/livingroom/light/cmd -m '{"state":"ON"}'
+```
 
 ## Viewing charts
 
