@@ -58,6 +58,19 @@ services:
       influxdb:
         condition: service_healthy
 
+  # Plant-light controller: reads lux telemetry, drives the Tapo P110M.
+  # The .../light/cmd topic is the external override seam (manual / AI).
+  light:
+    build: ./control
+    container_name: monitor-air-light
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Asia/Taipei   # local timestamps in logs; LIGHT_TZ drives the window
+    depends_on:
+      mosquitto:
+        condition: service_started
+
   # Synthetic publisher — off by default. Start with:
   #   docker compose --profile sim up -d sim
   sim:

@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""monitor-air plant-light controller.
+
+Reads lux from the sensor's telemetry, decides ON/OFF by a local-time window +
+lux hysteresis, and drives a Tapo P110M plug. The `.../light/cmd` topic is the
+external seam (manual / AI / Grafana) — auto decisions drive the plug directly,
+they do NOT round-trip through cmd (no echo, no retained re-fire).
+
+ponytail: one service, one file. lux thresholds + MIN_HOLD are the calibration
+knobs (the lamp can raise the sensor's own reading). Swap plug type → edit only
+the kasa calls in set_plug()/plug_is_on().
+"""
+import asyncio
+import json
+import os
+import sys
+import time
+from datetime import datetime, time as dtime
+from zoneinfo import ZoneInfo
+
+import aiomqtt
+from kasa import Credentials, Discover
+
+# ---- calibration knobs (tune in place) ----
+LUX_ON_BELOW = 1000      # under this, inside window → ON
+LUX_OFF_ABOVE = 3000     # over this → OFF (hysteresis gap stops flapping)
+ON_START = dtime(8, 0)   # only turn ON within [ON_START, ON_END)
+ON_END = dtime(18, 0)
+HARD_OFF = dtime(18, 30)  # at/after this → force OFF regardless of lux
+MIN_HOLD = 15 * 60       # after a switch, hold ≥ this (lamp may raise own lux)
+STALE = 5 * 60           # lux older than this → fail safe OFF (dead sensor)
+TICK = 60                # decision cadence, seconds
+MANUAL_HOLD = 2 * 60 * 60  # an external cmd suppresses auto for this long
+
+# ---- env ----
+LOC = os.getenv("LIGHT_LOCATION", "livingroom")
+TZ = ZoneInfo(os.getenv("LIGHT_TZ", "Asia/Taipei"))
+SENSOR = os.getenv("LIGHT_SENSOR_DEVICE", "sensor-01")
+MQTT_HOST = os.getenv("MQTT_HOST", "mosquitto")
+TAPO_IP = os.getenv("TAPO_IP", "")
+TAPO_EMAIL = os.getenv("TAPO_EMAIL", "")
+TAPO_PASSWORD = os.getenv("TAPO_PASSWORD", "")
+
+TELEM_TOPIC = f"monitor-air/{SENSOR}/telemetry"
+CMD_TOPIC = f"monitor-air/{LOC}/light/cmd"
+STATE_TOPIC = f"monitor-air/{LOC}/light/state"
+AVAIL_TOPIC = f"monitor-air/{LOC}/light/availability"
+
+
+def decide(lux, lux_at, now, current):
+    """Desired 'ON'/'OFF'. Pure: window + hysteresis + staleness.
+
+    MIN_HOLD and MANUAL_HOLD are enforced by the caller, not here.
+    """
+    cur = "ON" if current == "ON" else "OFF"
+    if lux is None or (now.timestamp() - lux_at) > STALE:
+        return "OFF"                       # dead/stale sensor → fail safe
+    t = now.time()                         # naive local wall time
+    if t < ON_START or t >= HARD_OFF:
+        return "OFF"                       # before window / past hard-off
+    if lux < LUX_ON_BELOW:
+        return "ON" if t < ON_END else cur  # new ON only before ON_END; else hold
+    if lux > LUX_OFF_ABOVE:
+        return "OFF"
+    return cur                             # hysteresis band → hold last state
+
+
+# ---- Tapo plug (the only code that knows about the hardware) ----
+async def _device(holder):
+    dev = holder.get("dev")
+    if dev is None:
+        dev = await Discover.discover_single(
+            TAPO_IP, credentials=Credentials(TAPO_EMAIL, TAPO_PASSWORD))
+        holder["dev"] = dev
+    return dev
+
+
+async def plug_is_on(holder):
+    dev = await _device(holder)
+    await dev.update()
+    return dev.is_on
+
+
+async def set_plug(holder, target):
+    try:
+        dev = await _device(holder)
+        await (dev.turn_on() if target == "ON" else dev.turn_off())
+        await dev.update()
+    except Exception:
+        holder.pop("dev", None)            # force rediscover next attempt
+        raise
+
+
+async def run():
+    st = {"lux": None, "lux_at": 0.0, "current": "OFF",
+          "manual_until": 0.0, "last_switch": 0.0}
+    dev = {}
+
+    async def drive(target, source, client):
+        if target == st["current"]:
+            return                         # idempotent (QoS1 dups, repeats)
+        try:
+            await set_plug(dev, target)
+        except Exception as e:
+            print(f"plug drive failed ({target}): {e}", flush=True)
+            await client.publish(AVAIL_TOPIC, "offline", qos=1, retain=True)
+            return
+        st["current"] = target
+        st["last_switch"] = time.time()
+        await client.publish(AVAIL_TOPIC, "online", qos=1, retain=True)
+        await client.publish(STATE_TOPIC, json.dumps(
+            {"state": target, "on": 1 if target == "ON" else 0, "source": source}),
+            qos=1, retain=True)
+        print(f"{source}: → {target}", flush=True)
+
+    will = aiomqtt.Will(AVAIL_TOPIC, "offline", qos=1, retain=True)
+    async with aiomqtt.Client(MQTT_HOST, will=will) as client:
+        try:                               # seed from the plug's real state
+            st["current"] = "ON" if await plug_is_on(dev) else "OFF"
+            await client.publish(AVAIL_TOPIC, "online", qos=1, retain=True)
+            await client.publish(STATE_TOPIC, json.dumps(  # refresh retained state
+                {"state": st["current"], "on": 1 if st["current"] == "ON" else 0,
+                 "source": "seed"}), qos=1, retain=True)
+            print(f"seeded current={st['current']}", flush=True)
+        except Exception as e:
+            print(f"startup plug read failed: {e}", flush=True)
+        await client.subscribe(TELEM_TOPIC, qos=1)
+        await client.subscribe(CMD_TOPIC, qos=1)
+
+        async def consume():
+            async for m in client.messages:
+                topic = str(m.topic)
+                try:
+                    payload = json.loads(m.payload)
+                except Exception:
+                    payload = {}
+                if topic == TELEM_TOPIC and "lux" in payload:
+                    try:                   # one bad reading must not kill the loop
+                        st["lux"] = float(payload["lux"])
+                        st["lux_at"] = time.time()
+                    except (TypeError, ValueError):
+                        pass
+                elif topic == CMD_TOPIC and not m.retain:
+                    # ignore a stray retained cmd replaying on reconnect — it would
+                    # masquerade as a fresh manual override and suppress auto.
+                    tgt = str(payload.get("state", "")).upper()
+                    if tgt in ("ON", "OFF"):
+                        st["manual_until"] = time.time() + MANUAL_HOLD
+                        await drive(tgt, "manual", client)
+
+        async def tick():
+            while True:
+                now = time.time()
+                if now >= st["manual_until"] and now - st["last_switch"] >= MIN_HOLD:
+                    want = decide(st["lux"], st["lux_at"], datetime.now(TZ),
+                                  st["current"])
+                    await drive(want, "auto", client)
+                await asyncio.sleep(TICK)
+
+        await asyncio.gather(consume(), tick())
+
+
+def selftest():
+    def at(h, m, lux, cur="OFF", age=10):
+        now = datetime(2026, 6, 25, h, m, tzinfo=TZ)
+        return decide(lux, now.timestamp() - age, now, cur)
+
+    assert at(12, 0, 50) == "ON", "dark@noon → ON"
+    assert at(12, 0, 9000) == "OFF", "bright@noon → OFF"
+    assert at(7, 0, 50) == "OFF", "dark@07:00 before window → OFF"
+    assert at(18, 45, 50) == "OFF", "dark@18:45 past hard-off → OFF"
+    assert at(12, 0, 2000, "ON") == "ON", "in-band holds ON"
+    assert at(12, 0, 2000, "OFF") == "OFF", "in-band holds OFF"
+    assert at(18, 10, 50, "ON") == "ON", "[18:00,18:30) keeps ON"
+    assert at(18, 10, 50, "OFF") == "OFF", "[18:00,18:30) no new ON"
+    now = datetime(2026, 6, 25, 12, 0, tzinfo=TZ)
+    assert decide(50, now.timestamp() - STALE - 1, now, "ON") == "OFF", "stale → OFF"
+    assert decide(None, now.timestamp(), now, "ON") == "OFF", "no lux → OFF"
+    print("selftest OK")
+
+
+if __name__ == "__main__":
+    if "--selftest" in sys.argv:
+        selftest()
+    else:
+        asyncio.run(run())
