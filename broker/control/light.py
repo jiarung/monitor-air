@@ -22,11 +22,10 @@ import aiomqtt
 from kasa import Credentials, Discover
 
 # ---- calibration knobs (tune in place) ----
-LUX_ON_BELOW = 1000      # under this, inside window → ON
-LUX_OFF_ABOVE = 3000     # over this → OFF (hysteresis gap stops flapping)
-ON_START = dtime(8, 0)   # only turn ON within [ON_START, ON_END)
-ON_END = dtime(18, 0)
-HARD_OFF = dtime(18, 30)  # at/after this → force OFF regardless of lux
+LUX_ON_BELOW = 2500      # after ON_START, under this → ON
+LUX_OFF_ABOVE = 15000    # over this → OFF (e.g. direct sun); else hold last state
+ON_START = dtime(8, 0)   # only turn ON within [ON_START, HARD_OFF)
+HARD_OFF = dtime(18, 0)  # at/after 18:00 → force OFF regardless of lux
 MIN_HOLD = 15 * 60       # after a switch, hold ≥ this (lamp may raise own lux)
 STALE = 5 * 60           # lux older than this → fail safe OFF (dead sensor)
 TICK = 60                # decision cadence, seconds
@@ -59,7 +58,7 @@ def decide(lux, lux_at, now, current):
     if t < ON_START or t >= HARD_OFF:
         return "OFF"                       # before window / past hard-off
     if lux < LUX_ON_BELOW:
-        return "ON" if t < ON_END else cur  # new ON only before ON_END; else hold
+        return "ON"                         # in window (already enforced above) + dark
     if lux > LUX_OFF_ABOVE:
         return "OFF"
     return cur                             # hysteresis band → hold last state
@@ -165,14 +164,14 @@ def selftest():
         now = datetime(2026, 6, 25, h, m, tzinfo=TZ)
         return decide(lux, now.timestamp() - age, now, cur)
 
-    assert at(12, 0, 50) == "ON", "dark@noon → ON"
-    assert at(12, 0, 9000) == "OFF", "bright@noon → OFF"
-    assert at(7, 0, 50) == "OFF", "dark@07:00 before window → OFF"
-    assert at(18, 45, 50) == "OFF", "dark@18:45 past hard-off → OFF"
-    assert at(12, 0, 2000, "ON") == "ON", "in-band holds ON"
-    assert at(12, 0, 2000, "OFF") == "OFF", "in-band holds OFF"
-    assert at(18, 10, 50, "ON") == "ON", "[18:00,18:30) keeps ON"
-    assert at(18, 10, 50, "OFF") == "OFF", "[18:00,18:30) no new ON"
+    assert at(12, 0, 50) == "ON", "dark@noon (<2500) → ON"
+    assert at(12, 0, 2000) == "ON", "lux 2000 (<2500) in window → ON"
+    assert at(12, 0, 20000) == "OFF", "very bright@noon (>15000) → OFF"
+    assert at(7, 0, 50) == "OFF", "before 08:00 → OFF"
+    assert at(18, 30, 50) == "OFF", "after 18:00 → OFF"
+    assert at(18, 10, 50, "ON") == "OFF", "18:00 hard-off forces OFF even if was ON"
+    assert at(12, 0, 5000, "ON") == "ON", "hold band (2500-15000) keeps ON"
+    assert at(12, 0, 5000, "OFF") == "OFF", "hold band keeps OFF"
     now = datetime(2026, 6, 25, 12, 0, tzinfo=TZ)
     assert decide(50, now.timestamp() - STALE - 1, now, "ON") == "OFF", "stale → OFF"
     assert decide(None, now.timestamp(), now, "ON") == "OFF", "no lux → OFF"
