@@ -52,13 +52,17 @@ def decide(lux, lux_at, now, current):
     MIN_HOLD and MANUAL_HOLD are enforced by the caller, not here.
     """
     cur = "ON" if current == "ON" else "OFF"
-    if lux is None or (now.timestamp() - lux_at) > STALE:
-        return "OFF"                       # dead/stale sensor → fail safe
     t = now.time()                         # naive local wall time
-    if t < ON_START or t >= HARD_OFF:
+    in_window = ON_START <= t < HARD_OFF
+    if lux is None or (now.timestamp() - lux_at) > STALE:
+        # sensor dropout: this environment is light-deficient, so inside the
+        # window we HOLD an already-on light rather than fail it off; only fail
+        # safe OFF if it was already off, or we're outside the window.
+        return "ON" if (in_window and cur == "ON") else "OFF"
+    if not in_window:
         return "OFF"                       # before window / past hard-off
     if lux < LUX_ON_BELOW:
-        return "ON"                         # in window (already enforced above) + dark
+        return "ON"                         # in window + dark
     if lux > LUX_OFF_ABOVE:
         return "OFF"
     return cur                             # hysteresis band → hold last state
@@ -172,9 +176,17 @@ def selftest():
     assert at(18, 10, 50, "ON") == "OFF", "18:00 hard-off forces OFF even if was ON"
     assert at(12, 0, 5000, "ON") == "ON", "hold band (2500-15000) keeps ON"
     assert at(12, 0, 5000, "OFF") == "OFF", "hold band keeps OFF"
-    now = datetime(2026, 6, 25, 12, 0, tzinfo=TZ)
-    assert decide(50, now.timestamp() - STALE - 1, now, "ON") == "OFF", "stale → OFF"
-    assert decide(None, now.timestamp(), now, "ON") == "OFF", "no lux → OFF"
+    noon = datetime(2026, 6, 25, 12, 0, tzinfo=TZ)
+    # sensor dropout inside the window holds an already-ON light (light-deficient env)
+    assert decide(50, noon.timestamp() - STALE - 1, noon, "ON") == "ON", "stale+ON in window → hold ON"
+    assert decide(None, noon.timestamp(), noon, "ON") == "ON", "no lux+ON in window → hold ON"
+    assert decide(None, noon.timestamp(), noon, "OFF") == "OFF", "dropout+OFF in window → stays OFF"
+    night = datetime(2026, 6, 25, 20, 0, tzinfo=TZ)
+    assert decide(None, night.timestamp(), night, "ON") == "OFF", "dropout+ON outside window → OFF"
+    open_t = datetime(2026, 6, 25, 8, 0, tzinfo=TZ)
+    assert decide(None, open_t.timestamp(), open_t, "ON") == "ON", "dropout+ON at 08:00 (incl.) → hold ON"
+    close_t = datetime(2026, 6, 25, 18, 0, tzinfo=TZ)
+    assert decide(None, close_t.timestamp(), close_t, "ON") == "OFF", "dropout+ON at 18:00 (excl.) → OFF"
     print("selftest OK")
 
 
