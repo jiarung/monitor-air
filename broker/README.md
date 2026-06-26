@@ -108,8 +108,8 @@ dead/stale sensor fails safe to OFF. All knobs (`LUX_ON_BELOW`, `ON_START`,
 ```bash
 docker compose up -d --build light            # start it
 docker compose run --rm light python /light.py --selftest   # check decide() logic
-# manual override:
-mosquitto_pub -h localhost -t monitor-air/livingroom/light/cmd -m '{"state":"ON"}'
+# manual switch (via the MQTT command seam — pauses auto control ~2h):
+./light-ctl.sh on        # or: off | status
 ```
 
 ## Viewing charts
