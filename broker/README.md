@@ -2,11 +2,32 @@
 
 The server side of `monitor-air`, run via Docker Compose:
 
-```
-ESP32 ──MQTT──▶ Mosquitto ──▶ Telegraf ──▶ InfluxDB (SSD) ──▶ Grafana
-                   │   ▲                          └──▶ backups to HDD (/data)
-                   ▼   │ cmd
-                 light ┘ ──▶ Tapo P110M plug
+```mermaid
+flowchart LR
+    esp["ESP32-S3<br/>BME680 + BH1750"]
+
+    subgraph server["this host — Docker stack"]
+        mqtt(["Mosquitto<br/>MQTT 1883"])
+        tgf["Telegraf"]
+        influx[("InfluxDB<br/>bucket: sensors")]
+        graf["Grafana"]
+        light["light service<br/>decide() / 60s"]
+    end
+
+    plug["Tapo P110M<br/>plant light"]
+    teleg(["Telegram"])
+    hdd[("HDD /data")]
+    ctl["light-ctl.sh<br/>(manual / AI)"]
+
+    esp -- "telemetry<br/>temp/hum/pressure/gas/lux" --> mqtt
+    mqtt --> tgf --> influx --> graf
+    influx -. "nightly backup" .-> hdd
+    mqtt -- "lux" --> light
+    ctl -- "cmd" --> mqtt
+    mqtt -- "cmd" --> light
+    light -- "ON / OFF" --> plug
+    light -- "state (retained)" --> mqtt
+    graf -- "deadman:<br/>sensor silent >15 min" --> teleg
 ```
 
 | Service    | Role                                   | Address                         |
