@@ -116,8 +116,13 @@ mosquitto_pub -h localhost -t monitor-air/livingroom/light/cmd -m '{"state":"ON"
 
 Open `http://<host>:3001`, log in (`admin` / your `GF_SECURITY_ADMIN_PASSWORD`),
 open the **monitor-air** dashboard. A **sensor-freshness** table on top, then
-five time-series panels (temp / humidity / pressure / gas / light). The InfluxDB
-datasource is auto-provisioned (uid `influxdb-monitor-air`).
+time-series panels (temp / humidity / pressure / gas / light) and a **DLI** bar
+chart. The InfluxDB datasource is auto-provisioned (uid `influxdb-monitor-air`).
+
+The **DLI** panel estimates the Daily Light Integral (mol/m²/day) over the last
+7 local days by integrating `PPFD ≈ lux / 54` per day. This is a daylight-spectrum
+approximation, **not** a true PAR measurement — an AS7341 spectral sensor would
+give real PAR; lux dropouts undercount, and today's bar is partial.
 
 ## Monitoring / device health
 
