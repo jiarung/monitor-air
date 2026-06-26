@@ -115,9 +115,29 @@ mosquitto_pub -h localhost -t monitor-air/livingroom/light/cmd -m '{"state":"ON"
 ## Viewing charts
 
 Open `http://<host>:3001`, log in (`admin` / your `GF_SECURITY_ADMIN_PASSWORD`),
-open the **monitor-air** dashboard. Five panels (temp / humidity / pressure /
-gas / light) with a time-range picker (top right). The InfluxDB datasource is
-auto-provisioned (uid `influxdb-monitor-air`).
+open the **monitor-air** dashboard. A **sensor-freshness** table on top, then
+five time-series panels (temp / humidity / pressure / gas / light). The InfluxDB
+datasource is auto-provisioned (uid `influxdb-monitor-air`).
+
+## Monitoring / device health
+
+The top table shows **seconds since each `device × field` last reported** — one
+row per device, one column per sensor field, populated automatically by grouping
+on the `device` tag and `_field` (no per-device config). Green < 3 min, red > 5
+min (aligned with the controller's `STALE`). A single red cell with green
+neighbours means **that sensor dropped** (e.g. the BH1750 lux field cutting out
+while the BME680 keeps reporting); a **whole red row** means the device is
+offline. This catches per-field dropouts that the time-series panels hide.
+
+> **Keep the firmware contract:** on a sensor read failure, **omit** that field
+> from the JSON rather than sending `0`/a fake value — omission is what makes a
+> dropout detectable here.
+
+**TODO (deadman alert):** add a Grafana multi-dimensional alert that fires per
+`(device, field)` when its age exceeds the threshold, so silent sensors page you
+instead of needing a human to watch the table. One rule covers all current and
+future devices/fields automatically. Needs a notification channel (Telegram bot
+token / SMTP) to be wired up.
 
 ## Backups (to the HDD)
 

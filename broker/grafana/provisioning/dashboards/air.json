@@ -14,14 +14,45 @@
   "timezone": "",
   "title": "monitor-air",
   "uid": "monitor-air-overview",
-  "version": 1,
+  "version": 2,
   "panels": [
+    {
+      "id": 6,
+      "title": "Sensor freshness — seconds since last reading (device × field)",
+      "type": "table",
+      "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "description": "Each cell = seconds since that device's field last arrived. A red cell with green neighbours = that sensor dropped (e.g. BH1750 lux); a whole red row = the device is offline. New devices add rows, new sensors add columns automatically. Thresholds align with the controller's STALE=5min.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "align": "center", "cellOptions": { "type": "color-background" } },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null },
+            { "color": "yellow", "value": 180 },
+            { "color": "red", "value": 300 }
+          ] }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "device" },
+            "properties": [ { "id": "custom.cellOptions", "value": { "type": "auto" } } ] }
+        ]
+      },
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
+          "query": "from(bucket: \"sensors\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"air\")\n  |> group(columns: [\"device\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))\n  |> group()\n  |> keep(columns: [\"device\", \"_field\", \"_value\"])\n  |> pivot(rowKey: [\"device\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+        }
+      ]
+    },
     {
       "id": 1,
       "title": "Temperature (°C)",
       "type": "timeseries",
       "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "fieldConfig": { "defaults": { "unit": "celsius", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
@@ -37,7 +68,7 @@
       "title": "Humidity (%)",
       "type": "timeseries",
       "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "fieldConfig": { "defaults": { "unit": "humidity", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
@@ -53,7 +84,7 @@
       "title": "Pressure (hPa)",
       "type": "timeseries",
       "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "fieldConfig": { "defaults": { "unit": "pressurehpa", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
@@ -69,7 +100,7 @@
       "title": "Gas resistance (kΩ)",
       "type": "timeseries",
       "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "fieldConfig": { "defaults": { "unit": "none", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
@@ -85,7 +116,7 @@
       "title": "Light (lux)",
       "type": "timeseries",
       "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "fieldConfig": { "defaults": { "unit": "lux", "custom": { "drawStyle": "line", "fillOpacity": 10, "spanNulls": false, "showPoints": "auto" } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "targets": [
