@@ -133,11 +133,32 @@ offline. This catches per-field dropouts that the time-series panels hide.
 > from the JSON rather than sending `0`/a fake value — omission is what makes a
 > dropout detectable here.
 
-**TODO (deadman alert):** add a Grafana multi-dimensional alert that fires per
-`(device, field)` when its age exceeds the threshold, so silent sensors page you
-instead of needing a human to watch the table. One rule covers all current and
-future devices/fields automatically. Needs a notification channel (Telegram bot
-token / SMTP) to be wired up.
+### Deadman alert (Telegram)
+
+A provisioned Grafana alert rule (`provisioning/alerting/rules.yaml`, folder
+**Device health**) fires per `(device, field)` when that series has been silent
+for **>15 min** — one rule covers all current and future devices/fields
+automatically. 15 min sits above the BH1750's transient gaps, so it pages only
+on a genuine sustained outage; the 5-min table is the fine-grained view.
+
+Telegram delivery is configured via Grafana's API (not file provisioning, which
+mis-types a numeric chat id). One-time setup:
+
+```bash
+# 1. create a bot with @BotFather → bot token; get your numeric chat id by
+#    messaging the bot then GET https://api.telegram.org/bot<token>/getUpdates
+# 2. put both in broker/.env:
+#      TELEGRAM_BOT_TOKEN=...
+#      TELEGRAM_CHAT_ID=...
+# 3. wire up the contact point + route (idempotent; re-run after a token change):
+bash grafana/setup-telegram.sh
+# 4. test delivery:
+curl -s "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  -d chat_id=$TELEGRAM_CHAT_ID -d text=monitor-air-test
+```
+
+The rule is declarative (in git); the contact point + route live in Grafana's DB
+(created by the script, so the bot token never enters version control).
 
 ## Backups (to the HDD)
 

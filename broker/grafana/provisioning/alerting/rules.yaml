@@ -1,0 +1,66 @@
+apiVersion: 1
+
+# Deadman: one multi-dimensional rule that fires per (device, field) when that
+# series hasn't reported for too long. New devices/fields are covered with no
+# extra config. Threshold 900s (15 min) sits comfortably above the BH1750's
+# transient gaps, so this pages only on a genuine sustained outage — the
+# dashboard's 5-min table is the fine-grained view.
+groups:
+  - orgId: 1
+    name: device-health
+    folder: Device health
+    interval: 1m
+    rules:
+      - uid: deadman-sensor-stale
+        title: Sensor stale — device/field silent
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Sensor silent: {{ $labels.device }} / {{ $labels._field }}'
+          description: 'No new {{ $labels._field }} from {{ $labels.device }} for >15 min — check the device / sensor.'
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: influxdb-monitor-air
+            model:
+              refId: A
+              datasource:
+                type: influxdb
+                uid: influxdb-monitor-air
+              query: |
+                from(bucket: "sensors")
+                  |> range(start: -30d)
+                  |> filter(fn: (r) => r._measurement == "air")
+                  |> group(columns: ["device", "_field"])
+                  |> last()
+                  |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))
+                  |> keep(columns: ["device", "_field", "_value"])
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              reducer: last
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [900]
