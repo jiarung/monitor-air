@@ -167,6 +167,11 @@ for **>15 min** — one rule covers all current and future devices/fields
 automatically. 15 min sits above the BH1750's transient gaps, so it pages only
 on a genuine sustained outage; the 5-min table is the fine-grained view.
 
+Two exclusions in the rule's query: the `sim` test device is ignored, and the
+`lux` field is only watched during **08:00–18:00** (local) — the BH1750 stops
+reporting lux in darkness, which is normal, so alerting on it at night would be
+pure noise. All other fields are watched 24/7.
+
 Telegram delivery is configured via Grafana's API (not file provisioning, which
 mis-types a numeric chat id). One-time setup:
 

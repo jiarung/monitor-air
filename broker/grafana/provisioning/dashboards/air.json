@@ -43,7 +43,7 @@
         {
           "refId": "A",
           "datasource": { "type": "influxdb", "uid": "influxdb-monitor-air" },
-          "query": "from(bucket: \"sensors\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"air\")\n  |> group(columns: [\"device\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))\n  |> group()\n  |> keep(columns: [\"device\", \"_field\", \"_value\"])\n  |> pivot(rowKey: [\"device\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
+          "query": "from(bucket: \"sensors\")\n  |> range(start: -7d)\n  |> filter(fn: (r) => r._measurement == \"air\" and r.device != \"sim\")\n  |> group(columns: [\"device\", \"_field\"])\n  |> last()\n  |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))\n  |> group()\n  |> keep(columns: [\"device\", \"_field\", \"_value\"])\n  |> pivot(rowKey: [\"device\"], columnKey: [\"_field\"], valueColumn: \"_value\")"
         }
       ]
     },
