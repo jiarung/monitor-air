@@ -14,3 +14,6 @@ broker/.env
 
 # Personal progress journal — kept local, not for the public repo
 docs/PROGRESS.md
+
+# Internal planning / lessons — kept local, not for the public repo
+tasks/
