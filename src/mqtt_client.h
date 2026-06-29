@@ -15,3 +15,8 @@ bool mqttConnected();
 // Publish one reading as on-contract JSON to monitor-air/<device>/telemetry
 // (QoS 0, not retained). Returns true if the publish was accepted by the client.
 bool mqttPublish(const SensorReading& r);
+
+// Publish one ambient spectral reading as JSON to monitor-air/<device>/spectrum
+// (QoS 0, not retained), tagged "mode":"ambient". No-op if the reading is invalid
+// (AS7341 absent). Returns true if the publish was accepted by the client.
+bool mqttPublishSpectrum(const SpectrumReading& s);

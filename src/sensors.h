@@ -21,9 +21,23 @@ struct SensorReading {
     bool lux_refValid  = false;
 };
 
+// One ambient spectral snapshot from the AS7341 (10 channels). Kept SEPARATE from
+// SensorReading so the `air` telemetry contract is untouched — published on its own
+// topic. valid=false when the AS7341 is absent or a read fails (fail-open).
+struct SpectrumReading {
+    float f415 = NAN, f445 = NAN, f480 = NAN, f515 = NAN, f555 = NAN;
+    float f590 = NAN, f630 = NAN, f680 = NAN;
+    float clear = NAN, nir = NAN;
+    float read_ms = NAN;  // how long the (blocking) read took — a bus-health signal
+    bool valid = false;
+};
+
 // Initialise the I2C bus and both sensors. Returns true if at least one sensor
 // came up; never blocks or halts on failure (a network device must keep running).
 bool sensorsBegin();
 
 // Take a fresh reading. Returns a new value each call (no shared mutable state).
 SensorReading sensorsRead();
+
+// Take a fresh ambient spectral reading (AS7341, LED off). valid=false if no AS7341.
+SpectrumReading spectrumRead();

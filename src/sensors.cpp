@@ -12,6 +12,7 @@ static inline bool finiteF(float v) {
 #include <BH1750.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME680.h>
+#include <Adafruit_AS7341.h>
 
 namespace {
 
@@ -28,10 +29,12 @@ constexpr uint8_t BH1750_ADDR_REF  = 0x5C;
 Adafruit_BME680 bme;
 BH1750 lightMeter;     // primary    @ 0x23 -> lux
 BH1750 lightMeterRef;  // reference  @ 0x5C -> lux_ref
+Adafruit_AS7341 as7341;  // spectral @ 0x39 (fixed addr) -> spectrum topic
 
 bool bmeOk = false;
 bool bh1750Ok = false;     // primary present
 bool bh1750RefOk = false;  // reference present
+bool as7341Ok = false;     // spectral present
 
 // BME680 sits at 0x77 on most Adafruit-style modules, 0x76 on some clones.
 bool beginBme() {
@@ -68,7 +71,21 @@ bool sensorsBegin() {
     bmeOk = beginBme();
     bh1750Ok    = beginBh1750At(lightMeter,    BH1750_ADDR_MAIN, "#1 (lux)");
     bh1750RefOk = beginBh1750At(lightMeterRef, BH1750_ADDR_REF,  "#2 (lux_ref)");
-    return bmeOk || bh1750Ok || bh1750RefOk;
+
+    // AS7341 spectral @ fixed 0x39. LED stays off — ambient readings only; the LED
+    // would contaminate the spectrum (it's for reflectance, a later phase).
+    as7341Ok = as7341.begin();
+    if (as7341Ok) {
+        as7341.setATIME(100);
+        as7341.setASTEP(999);             // ~280 ms integration
+        as7341.setGain(AS7341_GAIN_64X);  // tune if it saturates in direct sun
+        as7341.enableLED(false);
+        logln("[sensors] AS7341 ok @ 0x39");
+    } else {
+        logln("[sensors] AS7341 NOT found @ 0x39");
+    }
+
+    return bmeOk || bh1750Ok || bh1750RefOk || as7341Ok;
 }
 
 SensorReading sensorsRead() {
@@ -98,4 +115,25 @@ SensorReading sensorsRead() {
     }
 
     return r;
+}
+
+SpectrumReading spectrumRead() {
+    SpectrumReading s;
+    if (!as7341Ok) return s;  // fail-open: valid stays false
+
+    // Blocking ~0.5s (two SMUX cycles). Fine at the publish cadence; bounding it
+    // is a hardening item (matters mainly if the bus wedges or for reflectance).
+    // Time it: a creeping read_ms is an early warning of a degrading I2C connection.
+    uint16_t ch[12];
+    uint32_t t0 = millis();
+    bool ok = as7341.readAllChannels(ch);
+    s.read_ms = (float)(millis() - t0);
+    if (!ok) return s;  // read failed -> invalid
+
+    // readAllChannels fills 12 slots; [4] and [5] are duplicate ADCs — skip them.
+    s.f415 = ch[0];  s.f445 = ch[1];  s.f480 = ch[2];  s.f515 = ch[3];
+    s.f555 = ch[6];  s.f590 = ch[7];  s.f630 = ch[8];  s.f680 = ch[9];
+    s.clear = ch[10]; s.nir = ch[11];
+    s.valid = true;
+    return s;
 }

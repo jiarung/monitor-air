@@ -59,5 +59,8 @@ void loop() {
         lastPublish = now;
         SensorReading r = sensorsRead();
         mqttPublish(r);  // logs success / failure / empty-skip internally
+
+        SpectrumReading sp = spectrumRead();
+        mqttPublishSpectrum(sp);  // own topic; no-op + no log when AS7341 absent
     }
 }

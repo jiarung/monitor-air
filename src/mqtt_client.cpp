@@ -24,6 +24,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 
 char topic[64] = {0};
+char spectrumTopic[72] = {0};
 char clientId[48] = {0};
 bool configValid = false;
 uint32_t lastReconnectAttempt = 0;
@@ -77,6 +78,7 @@ void mqttSetup() {
         return;
     }
     snprintf(topic, sizeof(topic), "monitor-air/%s/telemetry", MQTT_DEVICE_ID);
+    snprintf(spectrumTopic, sizeof(spectrumTopic), "monitor-air/%s/spectrum", MQTT_DEVICE_ID);
     snprintf(clientId, sizeof(clientId), "monitor-air-%s", MQTT_DEVICE_ID);
     configValid = true;
 
@@ -159,6 +161,31 @@ bool mqttPublish(const SensorReading& r) {
         logf("[mqtt] publish FAILED: state=%d connected=%d wifi=%d topicLen=%u payloadLen=%u\n",
                       client.state(), client.connected(), WiFi.status(),
                       (unsigned)strlen(topic), (unsigned)strlen(payload));
+    }
+    return ok;
+}
+
+bool mqttPublishSpectrum(const SpectrumReading& s) {
+    if (!mqttConnected() || !s.valid) return false;  // fail-open: nothing to send
+
+    // All channels as floats (".0") to keep InfluxDB field types stable, like telemetry.
+    char payload[256];
+    int n = snprintf(payload, sizeof(payload),
+        "{\"mode\":\"ambient\",\"f415\":%.1f,\"f445\":%.1f,\"f480\":%.1f,\"f515\":%.1f,"
+        "\"f555\":%.1f,\"f590\":%.1f,\"f630\":%.1f,\"f680\":%.1f,\"clear\":%.1f,\"nir\":%.1f,"
+        "\"spectrum_read_ms\":%.1f}",
+        s.f415, s.f445, s.f480, s.f515, s.f555, s.f590, s.f630, s.f680, s.clear, s.nir,
+        s.read_ms);
+    if (n < 0 || (size_t)n >= sizeof(payload)) {
+        logln("[mqtt] spectrum publish aborted: payload overflow");
+        return false;
+    }
+
+    bool ok = client.publish(spectrumTopic, payload, false);  // QoS 0, not retained
+    if (ok) {
+        logf("[mqtt] published %s %s\n", spectrumTopic, payload);
+    } else {
+        logf("[mqtt] spectrum publish FAILED: state=%d\n", client.state());
     }
     return ok;
 }
