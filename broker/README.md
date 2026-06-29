@@ -137,8 +137,15 @@ docker compose run --rm light python /light.py --selftest   # check decide() log
 
 Open `http://<host>:3001`, log in (`admin` / your `GF_SECURITY_ADMIN_PASSWORD`),
 open the **monitor-air** dashboard. A **sensor-freshness** table on top, then
-time-series panels (temp / humidity / pressure / gas / light) and a **DLI** bar
-chart. The InfluxDB datasource is auto-provisioned (uid `influxdb-monitor-air`).
+time-series panels (temp / humidity / pressure / gas / light), a **DLI** bar
+chart, and an **AS7341 spectrum** bar chart. The InfluxDB datasource is
+auto-provisioned (uid `influxdb-monitor-air`).
+
+The **AS7341 spectrum** panel shows the latest 8-channel ambient spectrum
+(f415 violet → f680 red, raw counts) from the `spectrum` measurement. Telegraf
+ingests `monitor-air/+/spectrum` (separate from the `air` telemetry contract):
+the 8 channels + `clear`/`nir`/`spectrum_read_ms` become fields, with `device`
+and `mode` (ambient/reflectance) tags.
 
 The **DLI** panel estimates the Daily Light Integral (mol/m²/day) over the last
 7 local days by integrating `PPFD ≈ lux / 54` per day. This is a daylight-spectrum
