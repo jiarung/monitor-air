@@ -149,8 +149,19 @@ and `mode` (ambient/reflectance) tags.
 
 The **DLI** panel estimates the Daily Light Integral (mol/m²/day) over the last
 7 local days by integrating `PPFD ≈ lux / 54` per day. This is a daylight-spectrum
-approximation, **not** a true PAR measurement — an AS7341 spectral sensor would
-give real PAR; lux dropouts undercount, and today's bar is partial.
+approximation, **not** a true PAR measurement; lux dropouts undercount, and
+today's bar is partial.
+
+The **PPFD (spectrum-derived)** panel is the real-PAR replacement: instantaneous
+`PPFD ≈ CAL · Σ(count_λ · λ)` over the AS7341's 8 PAR-band channels — proper
+photon weighting that counts the blue/red light `lux` (photopic, green-weighted)
+under-counts. The **spectral shape is real; the absolute scale is not yet
+calibrated** — `CAL` (in the panel query) is a placeholder because the sensor's
+gain/integration time aren't known server-side. Calibrate against a PAR meter:
+`CAL_new = CAL · (PPFD_meter / shown value)`. Note the AS7341 currently lives on
+`staging-01` (indoors); the panel labels series by device, so it reads the plant
+only once that board moves to `livingroom`. The `lux/54` DLI stays until `CAL` is
+calibrated, then the DLI switches to the spectrum integral.
 
 ## Monitoring / device health
 
