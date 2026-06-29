@@ -29,7 +29,7 @@ HARD_OFF = dtime(18, 0)  # at/after 18:00 → force OFF regardless of lux
 MIN_HOLD = 15 * 60       # after a switch, hold ≥ this (lamp may raise own lux)
 STALE = 5 * 60           # lux older than this → fail safe OFF (dead sensor)
 TICK = 60                # decision cadence, seconds
-MANUAL_HOLD = 2 * 60 * 60  # an external cmd suppresses auto for this long
+MANUAL_HOLD = 5 * 60     # an external cmd suppresses auto for this long
 
 # ---- env ----
 LOC = os.getenv("LIGHT_LOCATION", "livingroom")
@@ -109,7 +109,9 @@ async def run():
             await client.publish(AVAIL_TOPIC, "offline", qos=1, retain=True)
             return
         st["current"] = target
-        st["last_switch"] = time.time()
+        if source == "auto":            # MIN_HOLD anti-flap is for auto only;
+            st["last_switch"] = time.time()  # a manual switch shouldn't delay auto resuming
+
         await client.publish(AVAIL_TOPIC, "online", qos=1, retain=True)
         await client.publish(STATE_TOPIC, json.dumps(
             {"state": target, "on": 1 if target == "ON" else 0, "source": source}),
