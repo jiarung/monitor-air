@@ -138,7 +138,8 @@ bool mqttPublish(const SensorReading& r) {
                  addField("hum", r.hum, r.humValid) &&
                  addField("pressure", r.pressure, r.pressureValid) &&
                  addField("gas", r.gas, r.gasValid) &&
-                 addField("lux", r.lux, r.luxValid);
+                 addField("lux", r.lux, r.luxValid) &&
+                 addField("lux_ref", r.lux_ref, r.lux_refValid);
     if (!built || n + 2 > cap) {  // +2: closing '}' and NUL
         logln("[mqtt] publish aborted: payload overflow");
         return false;

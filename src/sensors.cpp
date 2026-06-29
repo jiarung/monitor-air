@@ -15,16 +15,23 @@ static inline bool finiteF(float v) {
 
 namespace {
 
-// Both sensors share one I2C bus (Wire). Their addresses don't collide
-// (BME680 0x76/0x77, BH1750 0x23/0x5C), so a single SDA/SCL pair serves both.
+// All sensors share one I2C bus (Wire). Addresses don't collide: BME680 0x76/0x77,
+// BH1750 #1 0x23, BH1750 #2 0x5C — so a single SDA/SCL pair serves all of them.
 constexpr uint8_t I2C_SDA = 17;
 constexpr uint8_t I2C_SCL = 18;
 
+// Two BH1750s by ADDR strap: floating/low -> 0x23 (primary, plant location -> lux),
+// tied to 3V3 -> 0x5C (reference, no-natural-light spot -> lux_ref).
+constexpr uint8_t BH1750_ADDR_MAIN = 0x23;
+constexpr uint8_t BH1750_ADDR_REF  = 0x5C;
+
 Adafruit_BME680 bme;
-BH1750 lightMeter;
+BH1750 lightMeter;     // primary    @ 0x23 -> lux
+BH1750 lightMeterRef;  // reference  @ 0x5C -> lux_ref
 
 bool bmeOk = false;
-bool bh1750Ok = false;
+bool bh1750Ok = false;     // primary present
+bool bh1750RefOk = false;  // reference present
 
 // BME680 sits at 0x77 on most Adafruit-style modules, 0x76 on some clones.
 bool beginBme() {
@@ -43,15 +50,14 @@ bool beginBme() {
     return false;
 }
 
-// BH1750 ADDR unconnected -> 0x23 (ADDR high would be 0x5C). Shares Wire.
-bool beginBh1750() {
-    for (uint8_t addr : {0x23, 0x5C}) {
-        if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire)) {
-            logf("[sensors] BH1750 ok @ 0x%02X\n", addr);
-            return true;
-        }
+// Each BH1750 is bound to a FIXED address (no scan) so the two never get confused:
+// 0x23 -> lux, 0x5C -> lux_ref. A missing one just leaves its flag false (fail-open).
+bool beginBh1750At(BH1750& meter, uint8_t addr, const char* label) {
+    if (meter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE, addr, &Wire)) {
+        logf("[sensors] BH1750 %s ok @ 0x%02X\n", label, addr);
+        return true;
     }
-    logln("[sensors] BH1750 NOT found (0x23/0x5C)");
+    logf("[sensors] BH1750 %s NOT found @ 0x%02X\n", label, addr);
     return false;
 }
 
@@ -60,8 +66,9 @@ bool beginBh1750() {
 bool sensorsBegin() {
     Wire.begin(I2C_SDA, I2C_SCL);
     bmeOk = beginBme();
-    bh1750Ok = beginBh1750();
-    return bmeOk || bh1750Ok;
+    bh1750Ok    = beginBh1750At(lightMeter,    BH1750_ADDR_MAIN, "#1 (lux)");
+    bh1750RefOk = beginBh1750At(lightMeterRef, BH1750_ADDR_REF,  "#2 (lux_ref)");
+    return bmeOk || bh1750Ok || bh1750RefOk;
 }
 
 SensorReading sensorsRead() {
@@ -79,6 +86,14 @@ SensorReading sensorsRead() {
         if (lux >= 0.0f && finiteF(lux)) {  // BH1750 returns -1/-2 on error
             r.lux = lux;
             r.luxValid = true;
+        }
+    }
+
+    if (bh1750RefOk) {
+        float lux = lightMeterRef.readLightLevel();
+        if (lux >= 0.0f && finiteF(lux)) {
+            r.lux_ref = lux;
+            r.lux_refValid = true;
         }
     }
 

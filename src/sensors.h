@@ -10,13 +10,15 @@ struct SensorReading {
     float hum      = NAN;  // %RH
     float pressure = NAN;  // hPa
     float gas      = NAN;  // kOhm
-    float lux      = NAN;  // lux
+    float lux      = NAN;  // lux      — primary BH1750 @ 0x23 (plant location)
+    float lux_ref  = NAN;  // lux      — reference BH1750 @ 0x5C (no-natural-light spot)
 
     bool tempValid     = false;
     bool humValid      = false;
     bool pressureValid = false;
     bool gasValid      = false;
     bool luxValid      = false;
+    bool lux_refValid  = false;
 };
 
 // Initialise the I2C bus and both sensors. Returns true if at least one sensor
