@@ -12,6 +12,19 @@ reporting.
 - Fail-open telemetry: a sensor that fails to read just omits its field instead of blocking the message.
 - Multi-node ready: flash the same firmware and change only `MQTT_DEVICE_ID` per unit.
 
+## Demo
+
+Balcony cam alongside the live Grafana dashboard (temperature, humidity, pressure, gas,
+lux + a reference lux, daily light integral, and the AS7341 spectrum + spectrum-derived PPFD).
+
+**Daytime — natural light**
+
+![Daytime: balcony cam + Grafana dashboard](docs/media/demo-daytime.gif)
+
+**Evening — grow light on**
+
+![Evening: grow light on, balcony cam + Grafana dashboard](docs/media/demo-growlight.gif)
+
 ## Hardware
 
 | Item        | Detail                                                        |
